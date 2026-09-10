@@ -1,0 +1,24 @@
+.DS_Store
+*:Zone.Identifier
+*Zone.Identifier
+
+# Artefactos locales
+*.log
+*.tmp
+*.temp
+*.bak
+__pycache__/
+*.py[cod]
+
+# Memoria / dumps
+memoria.md
+memory.md
+*.memory
+*.memoria
+*.dump
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~

@@ -1,0 +1,584 @@
+.section ".data"
+	grid: .pad 1 192
+	body_x: .pad 1 192
+	body_y: .pad 1 192
+
+	head_idx: .word 0
+	tail_idx: .word 0
+	len: .word 3
+	dir: .word 3
+	rng_state: .word 0xC0BA2026
+	food_x: .word 0
+	food_y: .word 0
+	poll_i: .word 0
+
+	dx: .word 0
+	    .word 0
+	    .word -1
+	    .word 1
+
+	dy: .word -1
+	    .word 1
+	    .word 0
+	    .word 0
+
+	opp: .word 1
+	     .word 0
+	     .word 3
+	     .word 2
+
+	lcg_a: .word 1103515245
+	lcg_c: .word 12345
+
+	msg_over: .asciiz "FIN DE PARTIDA  score="
+	msg_title: .asciiz "SERPIENTE STX4"
+	msg_ctrl: .asciiz "Controles: W A S D. Pulsa una tecla para comenzar."
+	msg_replay: .asciiz "Pulsa una tecla para otra partida."
+
+.section ".text"
+	addi $sp, $zero, 0xFFF0
+
+	jal show_menu
+
+game_start:
+	jal zero_grid
+	jal init
+	jal draw_border
+
+	addi $a0, $zero, 5
+	addi $a1, $zero, 5
+	addi $a2, $zero, 'O'
+	jal draw_cell
+	addi $a0, $zero, 6
+	addi $a1, $zero, 5
+	addi $a2, $zero, 'O'
+	jal draw_cell
+	addi $a0, $zero, 7
+	addi $a1, $zero, 5
+	addi $a2, $zero, '@'
+	jal draw_cell
+
+	jal spawn_food
+
+game_loop:
+	jal tick_delay
+
+	lw $s4, dir($zero)
+	sll $t0, $s4, 2
+	lw $s2, dx($t0)
+	lw $s3, dy($t0)
+
+	lw $t1, head_idx($zero)
+	lbu $s0, body_x($t1)
+	lbu $s1, body_y($t1)
+
+	add $s2, $s0, $s2
+	add $s3, $s1, $s3
+
+	addi $t0, $zero, 0
+	blt $s2, $t0, game_over
+	addi $t0, $zero, 16
+	bge $s2, $t0, game_over
+	addi $t0, $zero, 0
+	blt $s3, $t0, game_over
+	addi $t0, $zero, 12
+	bge $s3, $t0, game_over
+
+	sll $t2, $s3, 4
+	add $t2, $t2, $s2
+	lbu $t3, grid($t2)
+	addi $t4, $zero, 1
+	beq $t3, $t4, game_over
+	addi $t4, $zero, 2
+	beq $t3, $t4, tick_eat
+	j tick_move
+
+tick_move:
+	lw $t0, tail_idx($zero)
+	lbu $t1, body_x($t0)
+	lbu $t2, body_y($t0)
+	sll $t3, $t2, 4
+	add $t3, $t3, $t1
+	addi $t4, $zero, 0
+	sb $t4, grid($t3)
+
+	addi $a0, $t1, 0
+	addi $a1, $t2, 0
+	addi $a2, $zero, ' '
+	jal draw_cell
+
+	lw $t0, tail_idx($zero)
+	addi $t0, $t0, 1
+	addi $t5, $zero, 192
+	blt $t0, $t5, tick_move'nowrap
+	addi $t0, $zero, 0
+tick_move'nowrap:
+	sw $t0, tail_idx($zero)
+	j tick_place_head
+
+tick_eat:
+	lw $t0, len($zero)
+	addi $t0, $t0, 1
+	sw $t0, len($zero)
+	jal spawn_food
+	j tick_place_head
+
+tick_place_head:
+	lw $t0, head_idx($zero)
+	addi $t0, $t0, 1
+	addi $t5, $zero, 192
+	blt $t0, $t5, tick_place_head'nowrap
+	addi $t0, $zero, 0
+tick_place_head'nowrap:
+	sw $t0, head_idx($zero)
+	sb $s2, body_x($t0)
+	sb $s3, body_y($t0)
+
+	sll $t2, $s3, 4
+	add $t2, $t2, $s2
+	addi $t4, $zero, 1
+	sb $t4, grid($t2)
+
+	addi $a0, $s2, 0
+	addi $a1, $s3, 0
+	addi $a2, $zero, '@'
+	jal draw_cell
+
+	j game_loop
+
+game_over:
+	addi $t2, $zero, -0x100
+	addi $t1, $zero, 0x1B
+	sb $t1, 0($t2)
+	addi $t1, $zero, '['
+	sb $t1, 0($t2)
+	// fila 16: deja la fila 15 en blanco como separador del borde inferior
+	// (fila 14, ver draw_border)
+	addi $a0, $zero, 16
+	jal print_udec
+	addi $t2, $zero, -0x100
+	addi $t1, $zero, ';'
+	sb $t1, 0($t2)
+	addi $a0, $zero, 1
+	jal print_udec
+	addi $t2, $zero, -0x100
+	addi $t1, $zero, 'H'
+	sb $t1, 0($t2)
+
+	orh $a0, $zero, .hi16 msg_over
+	ori $a0, $a0, .lo16 msg_over
+	jal imprimir_asciiz
+
+	lw $a0, len($zero)
+	jal print_udec
+
+	addi $t2, $zero, -0x100
+	addi $t1, $zero, '\r'
+	sb $t1, 0($t2)
+	addi $t1, $zero, '\n'
+	sb $t1, 0($t2)
+
+	orh $a0, $zero, .hi16 msg_replay
+	ori $a0, $a0, .lo16 msg_replay
+	jal imprimir_asciiz
+
+	jal wait_key
+	jal clear_screen
+	j game_start
+
+// Espera hasta que llegue un byte por la UART, lo consume y retorna.
+wait_key:
+	addi $t2, $zero, -0x100
+wait_key'poll:
+	lbu $t0, 0($t2)
+	bne $t0, $zero, wait_key'done
+
+	addi $t1, $zero, 30000
+wait_key'delay:
+	addi $t1, $t1, -1
+	bne $t1, $zero, wait_key'delay
+	j wait_key'poll
+
+wait_key'done:
+	jr $ra, 0
+
+// Escribe la secuencia ANSI de limpiar pantalla + cursor a home.
+clear_screen:
+	addi $t2, $zero, -0x100
+	addi $t1, $zero, 0x1B
+	sb $t1, 0($t2)
+	addi $t1, $zero, '['
+	sb $t1, 0($t2)
+	addi $t1, $zero, '2'
+	sb $t1, 0($t2)
+	addi $t1, $zero, 'J'
+	sb $t1, 0($t2)
+	addi $t1, $zero, 0x1B
+	sb $t1, 0($t2)
+	addi $t1, $zero, '['
+	sb $t1, 0($t2)
+	addi $t1, $zero, 'H'
+	sb $t1, 0($t2)
+	jr $ra, 0
+
+// Pone en 0 las 192 celdas del grid (necesario antes de un restart: la
+// partida anterior deja celdas marcadas como snake/comida).
+zero_grid:
+	addi $t0, $zero, 0
+zero_grid'loop:
+	sb $zero, grid($t0)
+	addi $t0, $t0, 1
+	addi $t1, $zero, 192
+	blt $t0, $t1, zero_grid'loop
+	jr $ra, 0
+
+// Pantalla de titulo: limpia, muestra titulo + controles, espera una tecla.
+show_menu:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+
+	jal clear_screen
+
+	orh $a0, $zero, .hi16 msg_title
+	ori $a0, $a0, .lo16 msg_title
+	jal imprimir_asciiz
+
+	orh $a0, $zero, .hi16 msg_ctrl
+	ori $a0, $a0, .lo16 msg_ctrl
+	jal imprimir_asciiz
+
+	jal wait_key
+	jal clear_screen
+
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra, 0
+
+// Arma la serpiente inicial: 3 celdas en fila, y=5, x=5,6,7 (cabeza en x=7).
+// head_idx=2, tail_idx=0, len=3, dir=RIGHT(3).
+init:
+	addi $t0, $zero, 5
+	addi $t1, $zero, 0
+	sb $t0, body_x($t1)
+	addi $t0, $zero, 5
+	sb $t0, body_y($t1)
+
+	addi $t0, $zero, 6
+	addi $t1, $zero, 1
+	sb $t0, body_x($t1)
+	addi $t0, $zero, 5
+	sb $t0, body_y($t1)
+
+	addi $t0, $zero, 7
+	addi $t1, $zero, 2
+	sb $t0, body_x($t1)
+	addi $t0, $zero, 5
+	sb $t0, body_y($t1)
+
+	addi $t0, $zero, 2
+	sw $t0, head_idx($zero)
+	addi $t0, $zero, 0
+	sw $t0, tail_idx($zero)
+	addi $t0, $zero, 3
+	sw $t0, len($zero)
+	addi $t0, $zero, 3
+	sw $t0, dir($zero)
+
+	// grid idx = y*16+x → 5*16+5=85, +6=86, +7=87
+	addi $t2, $zero, 1
+	addi $t3, $zero, 85
+	sb $t2, grid($t3)
+	addi $t3, $zero, 86
+	sb $t2, grid($t3)
+	addi $t3, $zero, 87
+	sb $t2, grid($t3)
+
+	jr $ra, 0
+
+// state = state * lcg_a + lcg_c (mod 2^32, automatico por overflow del registro)
+rng_step:
+	lw $t0, rng_state($zero)
+	lw $t1, lcg_a($zero)
+	mul $t0, $t0, $t1
+	lw $t2, lcg_c($zero)
+	add $t0, $t0, $t2
+	sw $t0, rng_state($zero)
+	jr $ra, 0
+
+// Busca una celda libre del grid y la marca como comida (CELL_FOOD=2), la dibuja con '*'.
+spawn_food:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+
+spawn_food'retry:
+	jal rng_step
+	lw $t0, rng_state($zero)
+	addi $t1, $zero, 15
+	and $t2, $t0, $t1
+	addi $sp, $sp, -4
+	sw $t2, 0($sp)
+
+	jal rng_step
+	lw $t0, rng_state($zero)
+	addi $t3, $zero, 12
+	restu $t4, $t0, $t3
+
+	lw $t2, 0($sp)
+	addi $sp, $sp, 4
+
+	sll $t5, $t4, 4
+	add $t5, $t5, $t2
+
+	lbu $t0, grid($t5)
+	bne $t0, $zero, spawn_food'retry
+
+	sw $t2, food_x($zero)
+	sw $t4, food_y($zero)
+
+	addi $t0, $zero, 2
+	sb $t0, grid($t5)
+
+	addi $a0, $t2, 0
+	addi $a1, $t4, 0
+	addi $a2, $zero, '$'
+	jal draw_cell
+
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra, 0
+
+// Lee un byte de la UART; si es w/a/s/d valido (no reversa 180 grados), actualiza dir.
+poll_once:
+	addi $t2, $zero, -0x100
+	lbu $t0, 0($t2)
+	beq $t0, $zero, poll_once'done
+
+	addi $t1, $zero, 'w'
+	beq $t0, $t1, poll_once'setU
+	addi $t1, $zero, 's'
+	beq $t0, $t1, poll_once'setD
+	addi $t1, $zero, 'a'
+	beq $t0, $t1, poll_once'setL
+	addi $t1, $zero, 'd'
+	beq $t0, $t1, poll_once'setR
+	j poll_once'done
+
+poll_once'setU:
+	addi $t3, $zero, 0
+	j poll_once'apply
+poll_once'setD:
+	addi $t3, $zero, 1
+	j poll_once'apply
+poll_once'setL:
+	addi $t3, $zero, 2
+	j poll_once'apply
+poll_once'setR:
+	addi $t3, $zero, 3
+	j poll_once'apply
+
+poll_once'apply:
+	lw $t0, dir($zero)
+	sll $t4, $t0, 2
+	lw $t5, opp($t4)
+	beq $t3, $t5, poll_once'done
+	sw $t3, dir($zero)
+
+poll_once'done:
+	jr $ra, 0
+
+// Espera ~1 tick de juego, polleando el teclado 15 veces repartidas en el medio.
+tick_delay:
+	addi $sp, $sp, -4
+	sw $ra, 0($sp)
+
+	addi $t0, $zero, 0
+	sw $t0, poll_i($zero)
+
+tick_delay'loop:
+	addi $t1, $zero, 780
+tick_delay'wait:
+	addi $t1, $t1, -1
+	bne $t1, $zero, tick_delay'wait
+
+	jal poll_once
+
+	lw $t0, poll_i($zero)
+	addi $t0, $t0, 1
+	sw $t0, poll_i($zero)
+	addi $t2, $zero, 15
+	blt $t0, $t2, tick_delay'loop
+
+	lw $ra, 0($sp)
+	addi $sp, $sp, 4
+	jr $ra, 0
+
+// Dibuja un caracter en (x=$a0, y=$a1) usando ANSI cursor positioning.
+// $a2 = caracter a imprimir.
+draw_cell:
+	addi $sp, $sp, -16
+	sw $ra, 0($sp)
+	sw $s0, 4($sp)
+	sw $s1, 8($sp)
+	sw $s2, 12($sp)
+
+	addi $s0, $a0, 0
+	addi $s1, $a1, 0
+	addi $s2, $a2, 0
+
+	addi $t2, $zero, -0x100
+
+	addi $t1, $zero, 0x1B
+	sb $t1, 0($t2)
+	addi $t1, $zero, '['
+	sb $t1, 0($t2)
+
+	addi $a0, $s1, 2
+	jal print_udec
+
+	addi $t1, $zero, ';'
+	sb $t1, 0($t2)
+
+	addi $a0, $s0, 2
+	jal print_udec
+
+	addi $t1, $zero, 'H'
+	sb $t1, 0($t2)
+
+	sb $s2, 0($t2)
+
+	lw $ra, 0($sp)
+	lw $s0, 4($sp)
+	lw $s1, 8($sp)
+	lw $s2, 12($sp)
+	addi $sp, $sp, 16
+	jr $ra, 0
+
+// Dibuja el marco (+/-/|) alrededor del playfield de 16x12, un anillo
+// afuera del area jugable (coords de juego -1..16 en x, -1..12 en y — el
+// offset +2 de draw_cell las lleva a coords de terminal >=1). Se llama una
+// vez por partida, en game_start. No toca el grid ni la logica de colision.
+draw_border:
+	addi $sp, $sp, -8
+	sw $ra, 0($sp)
+	sw $s0, 4($sp)
+
+	addi $a0, $zero, -1
+	addi $a1, $zero, -1
+	addi $a2, $zero, '*'
+	jal draw_cell
+	addi $a0, $zero, 16
+	addi $a1, $zero, -1
+	addi $a2, $zero, '*'
+	jal draw_cell
+	addi $a0, $zero, -1
+	addi $a1, $zero, 12
+	addi $a2, $zero, '*'
+	jal draw_cell
+	addi $a0, $zero, 16
+	addi $a1, $zero, 12
+	addi $a2, $zero, '*'
+	jal draw_cell
+
+	addi $s0, $zero, 0
+draw_border'tb:
+	addi $a0, $s0, 0
+	addi $a1, $zero, -1
+	addi $a2, $zero, '='
+	jal draw_cell
+	addi $a0, $s0, 0
+	addi $a1, $zero, 12
+	addi $a2, $zero, '='
+	jal draw_cell
+	addi $s0, $s0, 1
+	addi $t0, $zero, 16
+	blt $s0, $t0, draw_border'tb
+
+	addi $s0, $zero, 0
+draw_border'lr:
+	addi $a0, $zero, -1
+	addi $a1, $s0, 0
+	addi $a2, $zero, '#'
+	jal draw_cell
+	addi $a0, $zero, 16
+	addi $a1, $s0, 0
+	addi $a2, $zero, '#'
+	jal draw_cell
+	addi $s0, $s0, 1
+	addi $t0, $zero, 12
+	blt $s0, $t0, draw_border'lr
+
+	lw $s0, 4($sp)
+	lw $ra, 0($sp)
+	addi $sp, $sp, 8
+	jr $ra, 0
+
+// Imprime $a0 (unsigned) en decimal, sin espacio ni newline al final.
+print_udec:
+	addi $sp, $sp, -8
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+
+	addi $s0, $a0, 0
+	xor $s1, $s1, $s1
+	addi $t0, $zero, 10
+	addi $t2, $zero, -0x100
+
+	bne $a0, $zero, print_udec'apilar
+
+	addi $t1, $zero, '0'
+	sb $t1, 0($t2)
+	j print_udec'salir
+
+print_udec'apilar:
+	beq $s0, $zero, print_udec'desapilar
+	addi $s1, $s1, 1
+	restu $t1, $s0, $t0
+	sub $s0, $s0, $t1
+	divu $s0, $s0, $t0
+	addi $t1, $t1, '0'
+	addi $sp, $sp, -1
+	sb $t1, 0($sp)
+	j print_udec'apilar
+
+print_udec'desapilar:
+	beq $s1, $zero, print_udec'salir
+	lbu $t1, 0($sp)
+	sb $t1, 0($t2)
+	addi $s1, $s1, -1
+	addi $sp, $sp, 1
+	j print_udec'desapilar
+
+print_udec'salir:
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	addi $sp, $sp, 8
+	jr $ra, 0
+
+// Toma en $a0 un puntero a una string NUL-terminated y la imprime por la UART.
+imprimir_asciiz:
+	addi $sp, $sp, -12
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+	sw $s2, 8($sp)
+
+	addi $s0, $a0, 0
+	addi $s2, $zero, -0x100
+
+imprimir_asciiz'bucle:
+	lbu $s1, 0($s0)
+	beq $s1, $zero, imprimir_asciiz'salir
+	sb $s1, 0($s2)
+	addi $s0, $s0, 1
+	j imprimir_asciiz'bucle
+
+imprimir_asciiz'salir:
+	addi $s1, $zero, '\r'
+	sb $s1, 0($s2)
+	addi $s1, $zero, '\n'
+	sb $s1, 0($s2)
+
+	lw $s0, 0($sp)
+	lw $s1, 4($sp)
+	lw $s2, 8($sp)
+	addi $sp, $sp, 12
+	jr $ra, 0
