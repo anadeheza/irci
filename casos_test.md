@@ -1,24 +1,23 @@
-# Pruebas STX4 / RTM32 — encoding verificado en el emulador
+# Casos de prueba — RTM32 / STX4
 
-**Error clave corregido:** el ISA usa **opcode de 5 bits** en `[31:27]`.
-Si armás la palabra como MIPS (`opcode << 26`), el decodificador ve *otra*
-instrucción. Todos los hex de este archivo salieron de `encode.py`.
+Acá dejé los tests que corrí en el debugger. La idea fue cargar cada instrucción
+con `set [dir] hex`, hacer `step` y mirar registros (y memoria cuando hacía falta).
+
+Al principio armé varios hex como si el opcode tuviera 6 bits, y el emulador
+ejecutaba otra cosa. En el manual el opcode son 5 bits (31..27). Después de
+darme cuenta de eso regeneré todo con `encode.py` y volví a probar.
+
+Para levantar la máquina:
 
 ```
-chmod +x ../rtm32
-../rtm32 -d telnet -m 64K
-# otra terminal: telnet localhost 4444
+./rtm32 -d telnet -m 64K
 ```
 
-Tras `reset`, el PC queda en `0xF0000000` (vector ROM). Para probar en RAM:
-`set PC 0`.
+En otra terminal: `telnet localhost 4444`. Después de un `reset` el PC queda en
+`0xF0000000`, así que para estas pruebas uso `set PC 0` y trabajo en RAM baja.
 
-Fórmulas:
-- R: `(rs<<22)|(rt<<17)|(rd<<12)|(aux<<7)|func`
-- I: `(op<<27)|(rs<<22)|(rt<<17)|(imm & 0x1FFFF)`
-- L: `(op<<27)|(rs<<22)|(rt<<17)|(h<<16)|(imm & 0xFFFF)`
-- J: `(op<<27)|(addr_en_palabras & 0x7FFFFFF)`
-- Branch tomado: `PC = (PC_fetch + 4) + (imm << 2)`
+No metí TRAP ni CFS/CTS; preferí cubrir aritmética, lógica, saltos y acceso a
+memoria primero.
 
 ---
 
@@ -46,7 +45,7 @@ r
 - R7=0xC, R8=0x1E, R9=0x2A, PC=0xC, CAUSE=0
 
 ## Conclusiones
-Anduvo.
+Anduvo. Quedó 12+30=42 en R9 y no saltó ninguna excepción.
 
 ---
 
@@ -197,7 +196,7 @@ r
 - R12=0x000F000F, R13=0x0FFF0FFF, R14=0x0FF00FF0
 
 ## Conclusiones
-Anduvo.
+Anduvo. Los tres resultados coinciden con lo que calcula a mano bit a bit.
 
 ---
 
@@ -224,7 +223,7 @@ r
 - R1=0xABCD1234, R2=0xABCD12CB, CAUSE=0
 
 ## Conclusiones
-Anduvo.
+Anduvo. Con LUI y ORI armé 0xABCD1234 en R1; el XORI solo tocó la parte baja.
 
 ---
 
@@ -305,36 +304,42 @@ r
 - R4=0x55, R5=3, R6=2
 
 ## Conclusiones
-Anduvo.
+Anduvo. 17*5=85, 17/5=3 y el resto 2; todo encajó en R4/R5/R6.
 
 ---
 
 # Caso 11 — ROM mínima
 ## Descripción
-`boot_minimo.rom` calcula `(21*3)+7=70` en R6 y entra en loop con J.
+Probé la ROM pedida: un programa corto que multiplica, suma y se queda en loop.
 
-## Code (contenido útil)
+## Instrucciones
+ADDI / MUL / ADD / J dentro de `boot_minimo.rom`
+
+## Precondiciones
+- Emulador levantado con `./rtm32 -d telnet -m 64K`
+- Conectado por telnet a localhost:4444
+
+## Code
+```
+load boot_minimo.rom exact
+set PC 0
+step 5
+r
+```
+
+Contenido del programa:
 ```
 0x00  0x08040015   ADDI R2, R0, 21
 0x04  0x08060003   ADDI R3, R0, 3
 0x08  0x00864015   MUL  R4, R2, R3
 0x0C  0x080A0007   ADDI R5, R0, 7
 0x10  0x010A601C   ADD  R6, R4, R5
-0x14  0x10000005   J    word 5   # PC := 0x14
-```
-
-## Precondiciones
-```
-../rtm32 -d telnet -m 64K
-load entrega/boot_minimo.rom exact
-set PC 0
-step 5
-r
+0x14  0x10000005   J    word 5
 ```
 
 ## Postcondiciones
-- R2=0x15 R3=3 R4=0x3F R5=7 R6=0x46
-- PC=0x14; otro `step` deja PC en 0x14
+- R2=0x15, R3=3, R4=0x3F, R5=7, R6=0x46
+- PC=0x14; otro `step` deja el PC en el mismo lugar
 
 ## Conclusiones
-Anduvo. Esa imagen MDBG es la ROM pedida (boot + código mínimo).
+Anduvo. La imagen carga, hace (21*3)+7=70 y no se desvía del loop.
